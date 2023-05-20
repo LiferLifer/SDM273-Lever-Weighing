@@ -2,15 +2,15 @@
  * @file       main_control
  * @brief      The main control program of the lever weighing device realized by the linear motor module.
  * @author     Author
- * @version    Version 1.0.3
- * @date       2023-05-12
+ * @version    Version 1.0.4
+ * @date       2023-05-12(Origin)
  **************************************************************/
 
 /***************************************************************
  * @brief      连线方法
  * @note       MPU6050-UNO: VCC-VCC // GND-GND // SCL-A5 // SDA-A4 // INT-2 (Optional)
  * @note       OLED-UNO: VCC-VCC // GND-GND // SCL-无名port // SDA-无名port
- * @note       HPD970-UNO: PUL- -> 11 // DIR- -> 10 // EN- 可不接 // 各正极 -> 5V
+ * @note       HPD970-UNO: PUL- --> 11 // DIR- --> 10 // EN- --> GND // 各正极 --> 5V
  **************************************************************/
 
 // 引入驱动MPU6050所需的库
@@ -18,20 +18,20 @@
 #include <Wire.h>
 #include <Math.h>
 
-// 引入驱动OLED所需的库
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+// // 引入驱动OLED所需的库
+// #include <Adafruit_GFX.h>
+// #include <Adafruit_SSD1306.h>
 
-// 引入时钟
-#include <MsTimer2.h>
+// 步进电机控制库
+#include <Stepper.h>
 
-// 定义OLED阵列长宽
-#define SCREEN_WIDTH 128   // 设置OLED宽度,单位:像素
-#define SCREEN_HEIGHT 64   // 设置OLED高度,单位:像素
+// // 定义OLED阵列长宽
+// #define SCREEN_WIDTH 128   // 设置OLED宽度,单位:像素
+// #define SCREEN_HEIGHT 64   // 设置OLED高度,单位:像素
 
-// 定义OLED重置引脚,虽然教程未使用,但却是Adafruit_SSD1306库文件所必需的
-#define OLED_RESET 4
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+// // 定义OLED重置引脚,虽然教程未使用, 但却是Adafruit_SSD1306库文件所必需的
+// #define OLED_RESET 4
+// Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // 定义步进电机驱动器引脚
 const int PUL = 11;  // 定义脉冲信号引脚
@@ -51,19 +51,21 @@ Kalman kalmanPitch;  // Pitch角滤波器
 float pitch;   // Pitch角
 
 // 步进电机相关定义
+#define STEPS 200  // 转一周需要的步数（脉冲数）
+Stepper stepper(STEPS, DIR, PUL);
+
 float initPos = 0;  // 初始步进量
 float lastPos = 0;  // 上一次步进量
 float nowPos = 0;  // 当前步进量
 float diff = 0;
 
 //float stepAngle = 1.8;  // 步距角
-const float microStep = 125;  // 细分数
+const float microStep = 200;  // 每 x 个脉冲转一圈
 const float pitchSt = 5;  // 螺距 in mm 记得查看是几头丝杆！
 
 // 其他变量
 float mass = 0;
-const float K = 0;  // 测算得到的比例系数!!
-int t_CLK = 0; 
+const float K = 0;  // 测算得到的比例系数! 
 
 
 /***************************************************************
@@ -80,17 +82,20 @@ void setup() {
     Calibration();          // 执行校准
     nLastTime = micros();   // 记录当前时间
 
-    // 初始化OLED并设置其I2C地址
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    // // 初始化OLED并设置其I2C地址
+    // display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 
     // 初始化步进电机驱动器
     pinMode(PUL, OUTPUT);
     pinMode(DIR, OUTPUT);
+    stepper.setSpeed(600);  // 每分钟电机转动步数，正整数
 
-    // 装置平衡初始化
-    words_display("Initializing", "Please wait...");
-    levelInit();
+    // // 装置平衡初始化
+    // words_display("Initializing", "Please wait...");
+    // levelInit();
+    // stepper.step(-100);
 
+    Serial.println("Initialize!");
 }
 
 
@@ -103,10 +108,11 @@ void loop() {
     // 控制步进电机
     level();
 
-    // 展示当前状态
-    normal_display(pitch, mass);
+    // // 展示当前状态
+    // normal_display(pitch, mass);
 
-    delay(50);
+    delay(500);
+    Serial.println(">>>>>>>>>>>>>>>>>>>>>>>>zzx>>>>>>>>>>>>>>>>>>>>>>>");
 }
 
 
@@ -124,11 +130,14 @@ float getPitch() {
 
     //计算加速度向量的模长，均以g为单位
     float fNorm = sqrt(realVals[0] * realVals[0] + realVals[1] * realVals[1] + realVals[2] * realVals[2]);
-    float fPitch = GetPitch(realVals, fNorm);   // 计算Pitch角
+    float fPitch = getRawPitch(realVals, fNorm);   // 计算Pitch角
 
-    // if (realVals[0] < 0) {
-    //   fPitch = -fPitch;
-    // }
+    if (realVals[0] < 0) {
+      fPitch = -fPitch;
+    }
+
+    // Serial.print("InitPitch:");
+    // Serial.println(fPitch);
 
     // 计算两次测量的时间间隔dt，以秒为单位
     unsigned long nCurTime = micros();
@@ -139,8 +148,10 @@ float getPitch() {
     float fNewPitch = kalmanPitch.getAngle(fPitch, realVals[5], dt);
 
     // 向串口打印输出Pitch角，运行时在Arduino的串口监视器中查看
-    Serial.print("\nPitch:");
-    Serial.print(fNewPitch);
+    // Serial.print("Pitch:");
+    // Serial.println(fNewPitch);
+
+    return fNewPitch;
 }
 
 
@@ -173,7 +184,7 @@ unsigned char ReadMPUReg(int nReg) {
 
 
 /***************************************************************
-  *  @brief     MPU6050传感器读数
+  *  @brief     MPU6050 传感器读数
   *  @param     *pVals 指定的数组地址
   *  @note      读出加速度计三个分量、温度和三个角速度，保存在指定数组
  **************************************************************/
@@ -212,24 +223,12 @@ void Calibration() {
 }
 
 /***************************************************************
-  *  @brief     MPU6050获取 Roll 角
-  *  @param     *pRealVals 校准后的测量值
-  *  @param     fNorm 加速度向量的模长
-  *  @note      返回计算得出 Roll 角
- **************************************************************/
-float GetRoll(float *pRealVals, float fNorm) {
-    float fNormXZ = sqrt(pRealVals[0] * pRealVals[0] + pRealVals[2] * pRealVals[2]);
-    float fCos = fNormXZ / fNorm;
-    return acos(fCos) * fRad2Deg;
-}
-
-/***************************************************************
-  *  @brief     MPU6050获取 Pitch 角
+  *  @brief     MPU6050 获取 Pitch 角
   *  @param     *pRealVals 校准后的测量值
   *  @param     fNorm 加速度向量的模长
   *  @note      返回计算得出 Pitch 角
  **************************************************************/
-float GetPitch(float *pRealVals, float fNorm) {
+float getRawPitch(float *pRealVals, float fNorm) {
     float fNormYZ = sqrt(pRealVals[1] * pRealVals[1] + pRealVals[2] * pRealVals[2]);
     float fCos = fNormYZ / fNorm;
     return acos(fCos) * fRad2Deg;
@@ -237,7 +236,7 @@ float GetPitch(float *pRealVals, float fNorm) {
 
 
 /***************************************************************
-  *  @brief     MPU6050读数纠正消偏
+  *  @brief     MPU6050 读数纠正消偏
   *  @param     *pReadout 指定的读入数组地址
   *  @param     *pRealVals 指定的校准数组地址
   *  @note      对读数进行纠正，消除偏移，并转换为物理量
@@ -254,129 +253,21 @@ void Rectify(int *pReadout, float *pRealVals) {
 
 
 /***************************************************************
-  *  @brief     OLED 一般调用
-  *  @param     pitch: the pitch you want to show
-  *  @param     mass: the mass you want to show
-  *  @note      使用 OLED 显示计算得出的 pitch 以及 weight
- **************************************************************/
-void normal_display(float pitch, float mass) {
-    // 清除屏幕
-    display.clearDisplay();
-
-    // 设置字体颜色,白色可见
-    display.setTextColor(WHITE);
-
-    // 设置字体大小
-    display.setTextSize(3);
-
-    // 设置光标位置
-    display.setCursor(0, 20);
-
-    // 显示pitch
-    display.print("Pitch:   ");
-    display.print(pitch);
-
-    // 显示weight
-    display.setCursor(0, 45);
-    display.print("Mass:  ");
-    display.print(mass);
-
-    // 显示字符
-    display.display();
-}
-
-
-/***************************************************************
-  *  @brief     OLED 通用调用
-  *  @param     words: the pitch you want to show
-  *  @note      使用 OLED 显示输入的内容
- **************************************************************/
-void words_display(char *words_1, char *words_2) {
-    // 清除屏幕
-    display.clearDisplay();
-
-    // 设置字体颜色,白色可见
-    display.setTextColor(WHITE);
-
-    // 设置字体大小
-    display.setTextSize(3);
-
-    // 设置光标位置
-    display.setCursor(0, 20);
-
-    // 显示文字
-    display.print(words_1);
-
-    // 设置光标位置
-    display.setCursor(0, 40);
-
-    // 显示文字
-    display.print(words_2);
-
-    // 显示字符
-    display.display();
-}
-
-
-/***************************************************************
-  *  @brief     输出 PWM 波
-  *  @param     none
-  *  @note      转动 0.1 圈
- **************************************************************/
-void flash() {
-    static boolean output = HIGH;
-    digitalWrite(PUL, output);
-    output = !output;
-    t_CLK += 1;
-    if (t_CLK == 200 * microStep * 0.1 * 2) {
-        MsTimer2::stop();
-    }
-}
-
-/***************************************************************
-  *  @brief     控制步进电机转动
-  *  @param     circles: 转动圈数
-  *  @note      none
- **************************************************************/
-void step(float circles) {
-    int cnt = circles * 10;
-    for(int i = 0; i < cnt; i++){
-        t_CLK = 0;  // 脉冲计数器
-        MsTimer2::set(0.1875, flash);  // 记得更改翻转时间 0.1875ms?
-        MsTimer2::start();
-    }
-}
-
-
-/***************************************************************
-  *  @brief     控制滚轴丝杆前进
-  *  @param     distance: 前进距离
-  *  @param     dir: 1 advance; 0 back ?
-  *  @note      none
- **************************************************************/
-void advance(float distance, int dir) {
-    digitalWrite(DIR, dir);
-    float circles = distance / pitchSt;
-    step(circles);
-}
-
-
-/***************************************************************
   *  @brief     平衡初始化
   *  @param     none
   *  @note      none
  **************************************************************/
-void levelInit() {
-    float d = 0;
-    mass = 0;
-    do {
-        pitch = getPitch();
-        advance(5, 1);
-        d += 5;
-    } while(pitch < 0.5 && pitch > -0.5);
-    normal_display(pitch, mass);
-    initPos = d;
-}
+// void levelInit() {
+//     float d = 0;
+//     mass = 0;
+//     do {
+//         pitch = getPitch();
+//         stepper.step(-30);
+//         d += 30;
+//     } while(pitch < 0.5 && pitch > -0.5);
+//     normal_display(pitch, mass);
+//     initPos = d;
+// }
 
 
 /***************************************************************
@@ -387,30 +278,90 @@ void levelInit() {
 void level() {
     float d = 0;
     lastPos = nowPos;
-    pitch = getPitch();
-    do {
-        if(pitch > 0.5) {
-            advance(5, 1);
-            d += 5;
-        } else if(pitch < -0.5) {
-            advance(5, 0);
-            d -= 5;
-        }
+    Serial.println("--------------level!---------------");
+    // pitch = getPitch();
+    // stepper.step(2048);
+
+    while(1) {
+        Serial.println("--------------level while() in!---------------");
         pitch = getPitch();
-    } while(pitch < 0.5 && pitch > -0.5);
-    normal_display(pitch, mass);
+        if(pitch > 0.5) {
+            stepper.step(500);
+            Serial.println("+++++++++++++++++++++++");
+            d += 500 / microStep * pitchSt;
+        } else if(pitch < -0.5) {
+            stepper.step(-500);
+            Serial.println("----------jxy----------");
+            d -= 500 / microStep * pitchSt;
+        }
+        delay(10);
+    }
+
+    Serial.println("pitch: ");
+    Serial.println(pitch);
+
+//     do {
+//       // Serial.println("wzy-----------------------------------------");
+//         if(pitch > 0.5) {
+//           Serial.println("wzy-----------------------------------------");
+//             // advance(5, 1);
+//             stepper.step(-10);
+//             // d += 5;
+//         } else if(pitch < -0.5) {
+//             // advance(5, 0);
+//             Serial.println("jxy$$$$$$$$$$$$$$$$$$$$$$$$$$$");
+//             // d -= 5;
+//         }
+//         pitch = getPitch();
+// //        Serial.print('0');
+//     } while (pitch < 0.5 && pitch > -0.5);
+
     nowPos = lastPos + d;
-    diff = nowPos - initPos;
-    mass = getMass(diff);
+    // diff = nowPos - initPos;
+    // mass = getMass(diff);
+    // normal_display(pitch, mass);
 }
+
+
+ /***************************************************************
+   *  @brief     获取当前质量
+   *  @param     diff: 位移差
+   *  @note      none
+  **************************************************************/
+// float getMass(float diff) {
+//     float nowMass = diff * K;
+//     return nowMass;
+// }
 
 
 /***************************************************************
-  *  @brief     获取当前质量
-  *  @param     diff: 位移差
-  *  @note      none
+  *  @brief     OLED 一般调用
+  *  @param     pitch: the pitch you want to show
+  *  @param     mass: the mass you want to show
+  *  @note      使用 OLED 显示计算得出的 pitch 以及 weight
  **************************************************************/
-float getMass(float diff) {
-    float nowMass = diff * K;
-    return nowMass;
-}
+// void normal_display(float pitch, float mass) {
+//     // 清除屏幕
+//     display.clearDisplay();
+
+//     // 设置字体颜色,白色可见
+//     display.setTextColor(WHITE);
+
+//     // 设置字体大小
+//     display.setTextSize(3);
+
+//     // 设置光标位置
+//     display.setCursor(0, 20);
+
+//     // 显示pitch
+//     display.print("Pitch:   ");
+//     display.print(pitch);
+
+//     // 显示weight
+//     display.setCursor(0, 45);
+//     display.print("Mass:    ");
+//     display.print(mass);
+
+//     // 显示字符
+//     display.display();
+// }
