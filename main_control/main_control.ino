@@ -2,7 +2,7 @@
  * @file       main_control
  * @brief      The main control program of the lever weighing device realized by the linear motor module.
  * @author     Author
- * @version    Version 1.1.2
+ * @version    Version 1.1.3
  * @date       2023-05-12
  **************************************************************/
 
@@ -37,7 +37,7 @@ const int PUL = 11;  // 定义脉冲信号引脚
 const int DIR = 10;  // 定义方向信号引脚
 
 // GY25相关定义
-SoftwareSerial GY(8, 9);  // RX为D8，TX为D9
+SoftwareSerial GY(8, 9);  // 虚拟串口，RX为D8，TX为D9
 int YPR[3];
 unsigned char Re_buf[8], counter = 0;
 unsigned char sign = 0;
@@ -75,8 +75,6 @@ void setup() {
 
   GY.begin(115200);
   Wire.begin();
-
-  // 初始化GY25
   delay(2000);
 
   // // 初始化OLED并设置其I2C地址
@@ -181,6 +179,12 @@ void loop() {
 }
 
 
+ /***************************************************************
+   *  @brief     获取当前质量
+   *  @param     pos0: 初次翻转位置
+   *  @param     pos1: 再次翻转位置
+   *  @note      none
+  **************************************************************/
 float getMass(float pos0, float pos1) {
   float x;
   x = -(pos0 + pos1) / 2;
@@ -188,3 +192,30 @@ float getMass(float pos0, float pos1) {
   mass = -1.3225 * x + 1215;
   return mass;
 }
+
+
+/***************************************************************
+  *  @brief     OLED 调用
+  *  @param     mass: the mass you want to show
+  *  @note      使用 OLED 显示信息
+ **************************************************************/
+// void disp(float mass) {
+//     // 清除屏幕
+//     display.clearDisplay();
+
+//     // 设置字体颜色,白色可见
+//     display.setTextColor(WHITE);
+
+//     // 设置字体大小
+//     display.setTextSize(4);
+
+//     // 设置光标位置
+//     display.setCursor(0, 20);
+
+//     // 打印 Mass
+//     display.print("Mass:    ");
+//     display.print(mass);
+
+//     // 显示字符
+//     display.display();
+// }
