@@ -8,6 +8,10 @@ This is the project for SDM273!
 
 🐱This project aims to use the principle of leverage, ball screw linear module and ~~gyroscope sensor MPU6050~~ (now displayed by GY25 with a MPU6050 clip on it) to measure the quality of the object. 
 
+感谢尉进老师对本项目的 ~~大力支持~~ 在选题、设计等等方面的技术指导与热情帮助 QWQ
+
+Thanks to Mr. Wei for his ~~strong support for this project~~ for his technical guidance and enthusiastic help in topic selection, design, etc. QWQ
+
 ------
 
 w(ﾟДﾟ)w敲英文好累好累本喵决定用中文！
