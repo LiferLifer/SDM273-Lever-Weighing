@@ -2,7 +2,7 @@
  * @file       main_control
  * @brief      The main control program of the lever weighing device realized by the linear motor module.
  * @author     Author
- * @version    Version 1.2.0
+ * @version    Version 1.2.1
  * @date       2023-05-12
  **************************************************************/
 
@@ -183,17 +183,15 @@ void loop() {
   delay(1500);
 
   if (keeeey == 1) {
-    // Serial.print("您已经重达");
+    // Serial.print("\xc4\xfa\xd2\xd1\xbe\xad\xd6\xd8\xb4\xef");
     mass = getMass(pos[0], pos[1]);
     str = String(mass, 2);
     Serial.print(str);
-    // Serial.print("克辣");
+    // Serial.print("\xbf\xcb\xc0\xb1");
     delay(3000);
     keeeey--;
   }
 
-  // Serial.println(pos[0]);
-  // Serial.println(pos[1]);
   // Serial.print("Pos:  ");
   // Serial.println((pos[1] + pos[0]) / 2);
   // Serial.print("mass: ");
